@@ -11,6 +11,7 @@
  */
 
 /* @(#)tree.c	1.82 04/06/12 joerg */
+/* Parets from @(#)tree.c	1.112 08/08/14 joerg */
 /*
  * File tree.c - scan directory  tree and build memory structures for iso9660
  * filesystem
@@ -101,6 +102,8 @@ struct directory *find_or_create_directory(struct directory *parent,
 						struct stat* stat_template);
 static	void	delete_directory(struct directory *parent,
 										  struct directory *child);
+EXPORT	struct directory_entry *
+		dup_directory_entry	__PR((struct directory_entry *s_entry));
 int	sort_tree(struct directory *node);
 void	dump_tree(struct directory *node);
 void	update_nlink_field(struct directory *node);
@@ -292,6 +295,17 @@ sort_n_finish(struct directory *this_dir)
 	flush_file_hash();
 	s_entry = this_dir->contents;
 	while (s_entry) {
+#ifdef	USE_LARGEFILES
+		/*
+		 * Skip all but the last extent from a multi extent file,
+		 * we like them all have the same name.
+		 */
+		if ((s_entry->de_flags & MULTI_EXTENT) &&
+		    (s_entry->isorec.flags[0] & ISO_MULTIEXTENT)) {
+			s_entry = s_entry->next;
+			continue;
+		}
+#endif
 		/* ignore if it's hidden */
 		if (s_entry->de_flags & INHIBIT_ISO9660_ENTRY) {
 			s_entry = s_entry->next;
@@ -438,6 +452,7 @@ got_valid_name:
 					this_dir->whole_name, SPATH_SEPARATOR,
 					s_entry->name, s_entry1->name);
 			}
+
 			s_entry->isorec.name_len[0] = strlen(newname);
 			new_reclen = offsetof(struct iso_directory_record,
 				name[0]) +
@@ -451,6 +466,22 @@ got_valid_name:
 				new_reclen++;	/* Pad to an even byte */
 			s_entry->isorec.length[0] = new_reclen;
 			strcpy(s_entry->isorec.name, newname);
+#ifdef	USE_LARGEFILES
+			if (s_entry->de_flags & MULTI_EXTENT) {
+				struct directory_entry	*s_e;
+
+				/*
+				 * Copy over the new name to all other entries
+				 */
+				for (s_e = s_entry->mxroot;
+				    s_e && s_e->mxroot == s_entry->mxroot;
+							s_e = s_e->next) {
+					s_e->isorec.length[0] = new_reclen;
+					s_e->isorec.name_len[0] = s_entry->isorec.name_len[0];
+					strcpy(s_e->isorec.name, newname);
+				}
+			}
+#endif
 #ifdef APPLE_HYB
 			/* has resource fork - needs new name */
 			if (apple_both && s_entry->assoc) {
@@ -489,6 +520,22 @@ got_valid_name:
 				new_reclen++;	/* Pad to an even byte */
 			s_entry1->isorec.length[0] = new_reclen;
 			strcpy(s_entry1->isorec.name, newname);
+#ifdef	USE_LARGEFILES
+			if (s_entry1->de_flags & MULTI_EXTENT) {
+				struct directory_entry	*s_e;
+
+				/*
+				 * Copy over the new name to all other entries
+				 */
+				for (s_e = s_entry1->mxroot;
+				    s_e && s_e->mxroot == s_entry1->mxroot;
+							s_e = s_e->next) {
+					s_e->isorec.length[0] = new_reclen;
+					s_e->isorec.name_len[0] = s_entry1->isorec.name_len[0];
+					strcpy(s_e->isorec.name, newname);
+				}
+			}
+#endif
 			add_file_hash(s_entry1);
 #ifdef APPLE_HYB
 			/* has resource fork - needs new name */
@@ -562,6 +609,10 @@ got_valid_name:
 		table->filedir = this_dir;
 		if (jhide_trans_tbl)
 			table->de_flags |= INHIBIT_JOLIET_ENTRY;
+		/*
+		 * Always hide transtable from UDF tree.
+		 */
+		table->de_flags |= INHIBIT_UDF_ENTRY;
 /*		table->name = strdup("<translation table>");*/
 		table->name = strdup(trans_tbl);
 		/*
@@ -808,9 +859,12 @@ generate_reloc_directory()
 	s_entry->next = root->contents;
 	reloc_dir->self = s_entry;
 
-	/* The rr_moved entry will not appear in the Joliet tree. */
+	/* The rr_moved entry will not appear in the Joliet nor the UDF tree. */
 	reloc_dir->dir_flags |= INHIBIT_JOLIET_ENTRY;
 	s_entry->de_flags |= INHIBIT_JOLIET_ENTRY;
+	
+	reloc_dir->dir_flags |= INHIBIT_UDF_ENTRY;
+	s_entry->de_flags |= INHIBIT_UDF_ENTRY;
 
 	/* Hiding RR_MOVED seems not to be possible..... */
 #ifdef	HIDE_RR
@@ -1551,14 +1605,14 @@ insert_file_entry(struct directory *this_dir, char *whole_path,
 		return (0);
 	}
 	/* print a warning but don't spam too much */
-	if (S_ISREG(lstatbuf.st_mode) && (lstatbuf.st_size >= (off_t)0xFFFFFFFF)) {
+	if (S_ISREG(lstatbuf.st_mode) && (lstatbuf.st_size >= maxnonlarge) && !do_largefiles) {
 		static int udf_warned;
 
 		if( !allow_limited_size || verbose>1)
 			fprintf(stderr, "File %s is larger than 4GiB-1.\n", whole_path);
 		if( !allow_limited_size)
 		{
-			fprintf(stderr, "-allow-limited-size was not specified. There is no way do represent this file size. Aborting.\n");
+			fprintf(stderr, "There is no way do represent this file size. Aborting. See -iso-level 3 or -allow-limited-size options\n");
 			exit(1);
 		}
 		if(verbose>=1 && ! udf_warned ) {
@@ -1773,6 +1827,20 @@ insert_file_entry(struct directory *this_dir, char *whole_path,
 			s_entry->de_flags |= INHIBIT_JOLIET_ENTRY;
 		}
 	}
+	if (this_dir != reloc_dir &&
+				this_dir->dir_flags & INHIBIT_UDF_ENTRY) {
+		s_entry->de_flags |= INHIBIT_UDF_ENTRY;
+	} /* else if (strcmp(short_name, ".") != 0 &&
+		    strcmp(short_name, "..") != 0) {
+		if (u_matches(short_name) || u_matches(whole_path)) {
+			if (verbose > 1) {
+				fprintf(stderr,
+					"Hidden from UDF tree: %s\n",
+					whole_path);
+			}
+			s_entry->de_flags |= INHIBIT_UDF_ENTRY;
+		}
+	} */
 
 #ifdef SORTING
 	/* inherit any sort weight from parent directory */
@@ -1829,9 +1897,10 @@ insert_file_entry(struct directory *this_dir, char *whole_path,
 			s_entry->hfs_type = have_rsrc;
 			/*
 			 * don't want the rsrc file to be included in any
-			 * Joliet tree
+			 * Joliet/UDF tree
 			 */
 			s_entry->de_flags |= INHIBIT_JOLIET_ENTRY;
+			s_entry->de_flags |= INHIBIT_UDF_ENTRY;
 		} else if (s_entry->next) {
 			/*
 			 * if previous entry is an associated file,
@@ -2161,8 +2230,10 @@ insert_file_entry(struct directory *this_dir, char *whole_path,
 			 * directory
 			 */
 			if (s_entry->hfs_ent &&
-				!(s_entry->de_flags & RELOCATED_DIRECTORY))
+			    !(s_entry->de_flags & RELOCATED_DIRECTORY) &&
+			    (s_entry->isorec.flags[0] & ISO_MULTIEXTENT) == 0) {
 				free(s_entry->hfs_ent);
+			}
 			s_entry->hfs_ent = NULL;
 		}
 		/*
@@ -2194,9 +2265,110 @@ insert_file_entry(struct directory *this_dir, char *whole_path,
 			&statbuf, &lstatbuf, deep_flag);
 
 	}
+
+#ifdef	USE_LARGEFILES
+#define	LARGE_EXTENT	0xFFFFF800UL
+#define	MAX_EXTENT	0xFFFFFFFEUL
+	/*
+	 * Break up files greater than (4GB -2) into multiple extents.
+	 * The original entry, with ->size untouched, remains for UDF.
+	 * Each of the new file sections will get its own entry.
+	 * The file sections are the only entries actually written out to the
+	 * disk. The UDF entry will use "mxroot" to get the same start
+	 * block as the first file section, and all the sections will end up
+	 * in the ISO9660 directory in the correct order by "mxpart",
+	 * which the directory sorting routine knows about.
+	 *
+	 * If we ever need to be able to find mxpart == 1 after sorting,
+	 * we need to add another pointer to s_entry or to be very careful
+	 * with the loops above where the ISO-9660 name is copied back to
+	 * all multi-extent parts.
+	 */
+	if (s_entry->size > MAX_EXTENT && do_largefiles) {
+		off_t	size;
+
+		s_entry->de_flags |= MULTI_EXTENT;
+		s_entry->isorec.flags[0] |= ISO_MULTIEXTENT;
+		s_entry->mxroot = s_entry;
+		s_entry->mxpart = 0;
+		set_733((char *)s_entry->isorec.size, LARGE_EXTENT);
+		s_entry1 = dup_directory_entry(s_entry);
+		s_entry->next = s_entry1;
+
+		/*
+		 * full size UDF version
+		 */
+		s_entry->de_flags |= INHIBIT_ISO9660_ENTRY|INHIBIT_JOLIET_ENTRY;
+		if (s_entry->size > (((off_t)190)*0x3FFFF800)) {
+#ifndef	EOVERFLOW
+#define	EOVERFLOW	EFBIG
+#endif
+			errmsgno(EOVERFLOW,
+			"File %s is too large - hiding from UDF tree.\n",
+							whole_path);
+			s_entry->de_flags |= INHIBIT_UDF_ENTRY;
+		}
+
+		/*
+		 * Prepare the first file multi-extent section of the file.
+		 */
+		s_entry = s_entry1;
+		s_entry->de_flags |= INHIBIT_UDF_ENTRY;
+		size = s_entry->size;
+		s_entry->size = LARGE_EXTENT;
+		s_entry->mxpart++;
+
+		/*
+		 * Additional extents, as needed
+		 */
+		while (size > MAX_EXTENT) {
+			s_entry1 = dup_directory_entry(s_entry);
+			s_entry->next = s_entry1;
+
+			s_entry = s_entry1;
+			s_entry->mxpart++;
+			size -= LARGE_EXTENT;
+		}
+		/*
+		 * That was the last one.
+		 */
+		s_entry->isorec.flags[0] &= ~ISO_MULTIEXTENT;
+		s_entry->size = size;
+		set_733((char *)s_entry->isorec.size, (UInt32_t)s_entry->size);
+	}
+#endif /* USE_LARGEFILES */
+
 	return (1);
 }
 
+EXPORT struct directory_entry *
+dup_directory_entry(s_entry)
+	struct directory_entry	*s_entry;
+{
+	struct directory_entry	*s_entry1;
+
+	s_entry1 = (struct directory_entry *)
+		e_malloc(sizeof (struct directory_entry));
+	memcpy(s_entry1, s_entry, sizeof (struct directory_entry));
+
+	if (s_entry->rr_attributes) {
+		s_entry1->rr_attributes =
+				e_malloc(s_entry->total_rr_attr_size);
+		memcpy(s_entry1->rr_attributes, s_entry->rr_attributes,
+					s_entry->total_rr_attr_size);
+	}
+	if (s_entry->name)
+		s_entry1->name = strdup(s_entry->name);
+	if (s_entry->whole_name)
+		s_entry1->whole_name = strdup(s_entry->whole_name);
+#ifdef	APPLE_HYB
+	/*
+	 * If we also duplicate s_entry->hfs_ent, we would need to change
+	 * free_one_directory() and other calls to free(s_entry->hfs_ent) too.
+	 */
+#endif
+	return (s_entry1);
+}
 
 void
 generate_iso9660_directories(struct directory *node, FILE *outfile)

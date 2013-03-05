@@ -11,6 +11,7 @@
  */
 
 /* @(#)udf.c	1.14 04/04/15 Copyright 2001 J. Schilling */
+/* Parts from  @(#)udf.c	1.31 08/08/13 Copyright 2001-2007 J. Schilling */
 /*
  * udf.c - UDF support for genisoimage
  *
@@ -136,7 +137,7 @@ directory_size(struct directory *dpnt)
 
 	/* directory contents */
 	for (de = dpnt->jcontents; de; de = de->jnext) {
-		if (!(de->de_flags & INHIBIT_JOLIET_ENTRY)) {
+		if (!(de->de_flags & INHIBIT_UDF_ENTRY)) {
 			char *name = USE_MAC_NAME(de) ? de->hfs_ent->name : de->name;
 			/* skip . and .. */
 			if (name[0] == '.' && (name[1] == 0 || (name[1] == '.' && name[2] == 0)))
@@ -150,12 +151,12 @@ directory_size(struct directory *dpnt)
 static void
 assign_udf_directory_addresses(struct directory *dpnt)
 {
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY)) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY)) {
 		dpnt->self->udf_file_entry_sector = last_extent;
 		last_extent += 1 + ISO_BLOCKS(directory_size(dpnt));
 		++num_udf_directories;
 	}
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) || dpnt == reloc_dir) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY) || dpnt == reloc_dir) {
 		for (dpnt = dpnt->subdir; dpnt; dpnt = dpnt->next) {
 			assign_udf_directory_addresses(dpnt);
 		}
@@ -165,7 +166,7 @@ assign_udf_directory_addresses(struct directory *dpnt)
 static void
 assign_udf_file_entry_addresses(struct directory *dpnt)
 {
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY)) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY)) {
 		struct directory_entry *de;
 		for (de = dpnt->jcontents; de; de = de->jnext) {
 			if (!(de->de_flags & RELOCATED_DIRECTORY) &&
@@ -175,7 +176,7 @@ assign_udf_file_entry_addresses(struct directory *dpnt)
 			}
 		}
 	}
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) || dpnt == reloc_dir) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY) || dpnt == reloc_dir) {
 		for (dpnt = dpnt->subdir; dpnt; dpnt = dpnt->next) {
 			assign_udf_file_entry_addresses(dpnt);
 		}
@@ -654,6 +655,13 @@ set_file_ident_desc(unsigned char *buf, unsigned rba, char *name,
 }
 
 static void
+udf_size_panic(int n)
+{
+	comerrno(EX_BAD,
+		"Panic: UDF file size error, too many extents (%d).\n", n);
+}
+
+static void
 set_file_entry(unsigned char *buf, unsigned rba, unsigned file_rba,
 					uint64_t length, const char *iso_date, int is_directory,
 					unsigned link_count, unsigned unique_id)
@@ -752,6 +760,18 @@ set_file_entry(unsigned char *buf, unsigned rba, unsigned file_rba,
 		file_rba += chunk >> 11;
 		allocation_desc++;
 	}
+	if (((Uchar *)allocation_desc) > &buf[2048])
+		udf_size_panic(allocation_desc - &fe->allocation_desc);
+
+	if (((Uchar *)allocation_desc) > &buf[2048])
+		udf_size_panic(allocation_desc - &fe->allocation_desc);
+
+	if (((Uchar *)allocation_desc) > &buf[2048])
+		udf_size_panic(allocation_desc - &fe->allocation_desc);
+
+	if (((Uchar *)allocation_desc) > &buf[2048])
+		udf_size_panic(allocation_desc - &fe->allocation_desc);
+
 	set32(&fe->length_of_allocation_descs,
 				(unsigned char *) allocation_desc -
 				(unsigned char *) &fe->allocation_desc);
@@ -772,14 +792,14 @@ directory_link_count(struct directory *dpnt)
 	/* count relocated subdirectories */
 	for (de = dpnt->jcontents; de; de = de->jnext) {
 		if ((de->de_flags &
-		    (INHIBIT_JOLIET_ENTRY | RELOCATED_DIRECTORY)) ==
+		    (INHIBIT_UDF_ENTRY | RELOCATED_DIRECTORY)) ==
 							RELOCATED_DIRECTORY) {
 			link_count++;
 		}
 	}
 	/* count ordinary subdirectories */
 	for (dpnt = dpnt->subdir; dpnt; dpnt = dpnt->next) {
-		if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY)) {
+		if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY)) {
 			link_count++;
 		}
 	}
@@ -833,7 +853,7 @@ write_one_udf_directory(struct directory *dpnt, FILE *outfile)
 		char *name;
 		struct directory_entry *de1;
 
-		if (de->de_flags & INHIBIT_JOLIET_ENTRY)
+		if (de->de_flags & INHIBIT_UDF_ENTRY)
 			continue;
 
 		name = USE_MAC_NAME(de) ? de->hfs_ent->name : de->name;
@@ -888,10 +908,10 @@ write_one_udf_directory(struct directory *dpnt, FILE *outfile)
 static void
 write_udf_directories(struct directory *dpnt, FILE *outfile)
 {
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY)) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY)) {
 		write_one_udf_directory(dpnt, outfile);
 	}
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) || dpnt == reloc_dir) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY) || dpnt == reloc_dir) {
 		for (dpnt = dpnt->subdir; dpnt; dpnt = dpnt->next) {
 			write_udf_directories(dpnt, outfile);
 		}
@@ -905,7 +925,7 @@ write_udf_file_entries(struct directory *dpnt, FILE *outfile)
 
 	memset(buf, 0, SECTOR_SIZE);
 
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY)) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY)) {
 		struct directory_entry *de;
 		for (de = dpnt->jcontents; de; de = de->jnext) {
 			if (!(de->de_flags & RELOCATED_DIRECTORY) &&
@@ -926,7 +946,7 @@ write_udf_file_entries(struct directory *dpnt, FILE *outfile)
 			}
 		}
 	}
-	if (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) || dpnt == reloc_dir) {
+	if (!(dpnt->dir_flags & INHIBIT_UDF_ENTRY) || dpnt == reloc_dir) {
 		for (dpnt = dpnt->subdir; dpnt; dpnt = dpnt->next) {
 			write_udf_file_entries(dpnt, outfile);
 		}

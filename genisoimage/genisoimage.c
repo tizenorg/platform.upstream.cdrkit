@@ -19,6 +19,7 @@
 */
 /* @(#)mkisofs.c	1.167 06/01/30 joerg */
 /* Parts from @(#)mkisofs.c	1.206 07/02/26 joerg */
+/* Parts from @(#)mkisofs.c	1.238 08/06/13 joerg */
 /*
  * Program genisoimage.c - generate iso9660 filesystem  based upon directory
  * tree on hard disk.
@@ -189,6 +190,8 @@ int	omit_version_number = 0; /* May violate iso9660, but noone uses vers */
 int	no_rr = 0;		/* Do not use RR attributes from old session */
 int	force_rr = 0;		/* Force to use RR attributes from old session */
 Uint	RR_relocation_depth = 6; /* Violates iso9660, but most systems work */
+int	do_largefiles = 0;	/* Whether to allow multi-extent files */
+off_t	maxnonlarge = (off_t)0xFFFFFFFF;
 int	iso9660_level = 1;
 int	iso9660_namelen = LEN_ISONAME; /* 31 characters, may be set to 37 */
 int	full_iso9660_filenames = 0; /* Full 31 character iso9660 filenames */
@@ -1395,6 +1398,7 @@ int main(int argc, char *argv[])
 				/*
 				 * No restrictions
 				 */
+				do_largefiles++;
 				break;
 			case 4:
 				/*
@@ -1413,6 +1417,7 @@ int main(int argc, char *argv[])
 				relaxed_filenames++;		/* all chars	*/
 				allow_lowercase++;		/* even lowcase	*/
 				allow_multidot++;		/* > 1 dots	*/
+				do_largefiles++;
 				break;
 
 			default:
@@ -2750,6 +2755,11 @@ parse_input_files:
 		fprintf(stderr, "Can't have -hfs with -sparc-boot/-sunx86-boot\n");
 		exit(1);
 #endif
+	}
+	if (apple_hyb) {
+		if (do_largefiles) printf("Warning: cannot support large files with -hfs\n");
+		do_largefiles = 0;
+		maxnonlarge = (off_t)0x7FFFFFFF;
 	}
 	if (apple_hyb && use_genboot) {
 #ifdef	USE_LIBSCHILY

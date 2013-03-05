@@ -11,6 +11,7 @@
  */
 
 /* @(#)genisoimage.h	1.95 05/05/01 joerg */
+/* Parts from @(#)      1.132 08/08/06 joerg */
 /*
  * Header file genisoimage.h - assorted structure definitions and typecasts.
  *
@@ -60,8 +61,7 @@
 #endif
 #endif
 
-/*#if	_LFS_LARGEFILE*/
-#ifdef	HAVE_LARGEFILES
+#ifdef	USE_LARGEFILES
 /*
  * XXX Hack until fseeko()/ftello() are available everywhere or until
  * XXX we know a secure way to let autoconf ckeck for fseeko()/ftello()
@@ -106,6 +106,9 @@ struct directory_entry {
 	struct iso_directory_record isorec;
 	unsigned int	starting_block;
 	off_t		size;
+#ifdef	USE_LARGEFILES
+	int		mxpart;		/* Extent number	  */
+#endif
 	unsigned short	priority;
 	unsigned char	jreclen;	/* Joliet record len */
 	char		*name;
@@ -113,6 +116,7 @@ struct directory_entry {
 	char		*whole_name;
 	struct directory *filedir;
 	struct directory_entry *parent_rec;
+	struct directory_entry *mxroot;	/* Pointer to orig entry */
 	unsigned int	de_flags;
 	ino_t		inode;		/* Used in the hash table */
 	dev_t		dev;		/* Used in the hash table */
@@ -364,6 +368,8 @@ extern int	omit_version_number;
 extern int	no_rr;
 extern int	transparent_compression;
 extern Uint	RR_relocation_depth;
+extern int	do_largefiles;
+extern off_t	maxnonlarge;
 extern int	iso9660_level;
 extern int	iso9660_namelen;
 extern int	full_iso9660_filenames;
@@ -447,6 +453,8 @@ extern int	insert_file_entry(struct directory *, char *, char *, int);
 extern int	insert_file_entry(struct directory *, char *, char *);
 #endif	/* APPLE_HYB */
 
+extern	struct directory_entry *
+		dup_directory_entry	__PR((struct directory_entry *s_entry));
 extern void generate_iso9660_directories(struct directory *, FILE *);
 extern void dump_tree(struct directory * node);
 extern struct directory_entry *
@@ -749,6 +757,8 @@ extern void	*e_malloc(size_t);
 #define	MEMORY_FILE		   0x80		/* de_flags only  */
 #define	HIDDEN_FILE		   0x100	/* de_flags only  */
 #define	DIR_WAS_SCANNED		   0x200	/* dir_flags only */
+#define	MULTI_EXTENT		   0x1000	/* de_flags only  */
+#define	INHIBIT_UDF_ENTRY	   0x2000
 
 /*
  * Volume sequence number to use in all of the iso directory records.

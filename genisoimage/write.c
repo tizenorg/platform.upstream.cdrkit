@@ -12,6 +12,7 @@
 
 /* @(#)write.c	1.88 06/02/01 joerg */
 /* Parts from @(#)write.c	1.106 07/02/17 joerg */
+/* Parts from @(#)write.c	1.117 07/12/16 joerg */
 /*
  * Program write.c - dump memory  structures to  file for iso9660 filesystem.
  *
@@ -92,7 +93,7 @@ static	int	xawrite(void *buffer, int size, int count, FILE *file,
 void	xfwrite(void *buffer, int size, int count, FILE *file, int submode, 
 				  BOOL islast);
 static 	int	assign_directory_addresses(struct directory *node);
-#ifdef APPLE_HYB
+#if defined(APPLE_HYB) || defined(USE_LARGEFILES)
 static 	void	write_one_file(char *filename, off_t size, FILE *outfile, 
 										off_t off);
 #else
@@ -417,13 +418,13 @@ assign_directory_addresses(struct directory *node)
 	return (0);
 }
 
-#ifdef APPLE_HYB
+#if defined(APPLE_HYB) || defined(USE_LARGEFILES)
 static void
 write_one_file(char *filename, off_t size, FILE *outfile, off_t off)
 #else
 static void
 write_one_file(char *filename, off_t size, FILE *outfile)
-#endif	/* APPLE_HYB */
+#endif	/* APPLE_HYB || USE_LARGEFILES */
 {
 	/*
 	 * It seems that there are still stone age C-compilers
@@ -456,9 +457,9 @@ static	char		buffer[SECTOR_SIZE * NSECT];
 		exit(1);
 #endif
 	}
-#ifdef APPLE_HYB
+#if defined(APPLE_HYB) || defined(USE_LARGEFILES)
 	fseek(infile, off, SEEK_SET);
-#endif	/* APPLE_HYB */
+#endif	/* APPLE_HYB || USE_LARGEFILES */
 	remain = size;
 
 	if (include_in_jigdo)
@@ -655,8 +656,18 @@ compare_dirs(const void *rr, const void *ll)
 		return (-1);
 #endif	/* APPLE_HYB */
 
-	/* If the entries are the same, this is an error. */
+	/*
+	 * If the names are the same, multiple extent sections of the same file
+	 * are sorted by part number.  If the part numbers do not differ, this
+	 * is an error.
+	 */
 	if (strcmp(rpnt, lpnt) == 0) {
+#ifdef USE_LARGEFILES
+		if ((*r)->mxpart < (*l)->mxpart)
+			return (-1);
+		else if ((*r)->mxpart > (*l)->mxpart)
+			return (1);
+#endif
 #ifdef	USE_LIBSCHILY
 		errmsgno(EX_BAD,
 			"Error: '%s' and '%s' have the same ISO9660 name '%s'.\n",
@@ -1065,11 +1076,10 @@ assign_file_addresses(struct directory *dpnt, BOOL isnest)
 		}
 #endif /* DVD_VIDEO */
 
-		s_entry = dpnt->contents;
 		for (s_entry = dpnt->contents; s_entry;
 						s_entry = s_entry->next) {
 			/*
-			 * If we already have an  extent for this entry, then
+			 * If we already have an extent for this entry, then
 			 * don't assign a new one.  It must have come from a
 			 * previous session on the disc.  Note that we don't
 			 * end up scheduling the thing for writing either.
@@ -1078,7 +1088,9 @@ assign_file_addresses(struct directory *dpnt, BOOL isnest)
 				continue;
 			}
 			/*
-			 * This saves some space if there are symlinks present
+			 * This saves some space if there are symlinks present.
+			 * If this is a multi-extent file, we get mxpart == 1
+			 * from find_hash().
 			 */
 			s_hash = find_hash(s_entry->dev, s_entry->inode);
 			if (s_hash) {
@@ -1091,6 +1103,36 @@ assign_file_addresses(struct directory *dpnt, BOOL isnest)
 						s_hash->starting_block);
 				set_733((char *) s_entry->isorec.size,
 						s_hash->size);
+#ifdef USE_LARGEFILES
+				if (s_entry->de_flags & MULTI_EXTENT) {
+					struct directory_entry *s_e;
+					unsigned int		ext = s_hash->starting_block;
+
+					/*
+					 * Skip the multi extent root entry.
+					 */
+					if (s_entry->mxpart == 0)
+						continue;
+					/*
+					 * The directory is sorted, so we should
+					 * see s_entry->mxpart == 1 first.
+					 */
+					if (s_entry->mxpart != 1) {
+						comerrno(EX_BAD,
+						"Panic: Multi extent parts for %s not sorted.\n",
+						s_entry->whole_name);
+					}
+					s_entry->mxroot->starting_block = ext;
+					for (s_e = s_entry;
+					    s_e && s_e->mxroot == s_entry->mxroot;
+								s_e = s_e->next) {
+						set_733((char *) s_e->isorec.extent,
+									ext);
+						ext += ISO_BLOCKS(s_e->size);
+					}
+				}
+#endif
+
 #ifdef SORTING
 				/* check for non-directory files */
 				if (do_sort && ((s_entry->isorec.flags[0] & ISO_DIRECTORY) == 0)) {
@@ -1247,8 +1289,54 @@ assign_file_addresses(struct directory *dpnt, BOOL isnest)
 				set_733((char *) s_entry->isorec.extent,
 								last_extent);
 				s_entry->starting_block = last_extent;
+#ifdef USE_LARGEFILES
+				/*
+				 * Update the entries for multi-section files
+				 * as we now know the starting extent numbers.
+				 */
+				if (s_entry->de_flags & MULTI_EXTENT) {
+					struct directory_entry *s_e;
+					unsigned int		ext = last_extent;
+
+					/*
+					 * Skip the multi extent root entry.
+					 */
+					if (s_entry->mxpart == 0)
+						continue;
+					/*
+					 * The directory is sorted, so we should
+					 * see s_entry->mxpart == 1 first.
+					 */
+					if (s_entry->mxpart != 1) {
+						comerrno(EX_BAD,
+						"Panic: Multi extent parts for %s not sorted.\n",
+						s_entry->whole_name);
+					}
+					dwpnt->size = s_entry->mxroot->size;
+					s_entry->mxroot->starting_block = ext;
+					/*
+					 * Set the mxroot (mxpart == 0) to allow
+					 * the UDF code to fetch the starting
+					 * extent number.
+					 */
+					set_733((char *) s_entry->mxroot->isorec.extent, ext);
+					for (s_e = s_entry;
+					    s_e && s_e->mxroot == s_entry->mxroot;
+								s_e = s_e->next) {
+						if (s_e->mxpart == 0)
+							continue;
+						set_733((char *) s_e->isorec.extent,
+									ext);
+						ext += ISO_BLOCKS(s_e->size);
+					}
+					add_hash(s_entry);
+				}
+#endif
 				add_hash(s_entry);
-				last_extent += ISO_BLOCKS(s_entry->size);
+				/*
+				 * The cache holds the full size of the file
+				 */
+				last_extent += ISO_BLOCKS(dwpnt->size);
 #ifdef DVD_VIDEO
 				/* Shouldn't we always add the pad info? */
 				if (dvd_video) {
@@ -1343,8 +1431,10 @@ free_one_directory(struct directory *dpnt)
 			s_entry_d->whole_name = NULL;
 		}
 #ifdef APPLE_HYB
-		if (apple_both && s_entry_d->hfs_ent && !s_entry_d->assoc)
+		if (apple_both && s_entry_d->hfs_ent && !s_entry_d->assoc &&
+		    (s_entry_d->isorec.flags[0] & ISO_MULTIEXTENT) == 0) {
 			free(s_entry_d->hfs_ent);
+		}
 #endif	/* APPLE_HYB */
 
 		free(s_entry_d);

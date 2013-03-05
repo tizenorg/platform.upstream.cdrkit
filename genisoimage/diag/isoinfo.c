@@ -11,6 +11,7 @@
  */
 
 /* @(#)isoinfo.c	1.50 05/05/15 joerg */
+/* Parts from @(#)isoinfo.c	1.63 08/08/25 joerg */
 /*
  * File isodump.c - dump iso9660 directory information.
  *
@@ -618,7 +619,7 @@ dump_stat(struct iso_directory_record *idr, int extent)
 	sprintf(outline+48, "%4d", date_buf[0]+1900);
 
 	sprintf(outline+53, "[%7d", extent);	/* XXX up to 20 GB */
-	sprintf(outline+61, " %02X]", idr->flags[0]);
+	sprintf(outline+61, " %02X]", idr->flags[0] & 0xFF);
 
 	for (i = 0; i < 66; i++) {
 		if (outline[i] == 0) outline[i] = ' ';
@@ -663,6 +664,9 @@ parse_dir(char *rootname, int extent, int len)
 	int		i;
 	struct iso_directory_record * idr;
 	unsigned char	uh, ul, uc, *up;
+	unsigned char	flags = 0;
+	Llong		size = 0;
+	int		sextent = 0;
 
 
 	if (do_listing)
@@ -776,8 +780,27 @@ parse_dir(char *rootname, int extent, int len)
 				strcat(testname, name_buf);
 				printf("%s\n", testname);
 			}
-			if (do_listing)
-				dump_stat(idr, isonum_733((unsigned char *)idr->extent));
+			if (do_listing) {
+				if ((idr->flags[0] & ISO_MULTIEXTENT) && size == 0)
+					sextent = isonum_733((unsigned char *)idr->extent);
+				if (debug ||
+				    ((idr->flags[0] & ISO_MULTIEXTENT) == 0 && size == 0)) {
+					dump_stat(idr, isonum_733((unsigned char *)idr->extent));
+				}
+				size += fstat_buf.st_size;
+				if ((flags & ISO_MULTIEXTENT) &&
+				    (idr->flags[0] & ISO_MULTIEXTENT) == 0) {
+					fstat_buf.st_size = size;
+					if (!debug)
+						idr->flags[0] |= ISO_MULTIEXTENT;
+					dump_stat(idr, sextent);
+					if (!debug)
+						idr->flags[0] &= ~ISO_MULTIEXTENT;
+				}
+				flags = idr->flags[0];
+				if ((idr->flags[0] & ISO_MULTIEXTENT) == 0)
+					size = 0;
+			}
 			i += buffer[i];
 			if (i > 2048 - offsetof(struct iso_directory_record, name[0])) break;
 		}

@@ -11,6 +11,7 @@
  */
 
 /* @(#)joliet.c	1.38 05/05/01 joerg */
+/* Parts from  @(#)joliet.c>1.54 07/10/20 joerg */
 /*
  * File joliet.c - handle Win95/WinNT long file/unicode extensions for iso9660.
  *
@@ -507,7 +508,9 @@ assign_joliet_directory_addresses(struct directory *node)
 			}
 		}
 		/* skip if hidden - but not for the rr_moved dir */
-		if (dpnt->subdir && (!(dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) || dpnt == reloc_dir)) {
+		if (dpnt->subdir &&
+		    ((dpnt->dir_flags & INHIBIT_JOLIET_ENTRY) == 0 ||
+		    dpnt == reloc_dir)) {
 			assign_joliet_directory_addresses(dpnt->subdir);
 		}
 		dpnt = dpnt->next;
@@ -643,6 +646,7 @@ generate_joliet_path_tables()
 	char		*npnt;
 	char		*npnt1;
 	int		tablesize;
+	unsigned int	jpindex;
 
 	/* First allocate memory for the tables and initialize the memory */
 	tablesize = jpath_blocks << 11;
@@ -723,10 +727,10 @@ generate_joliet_path_tables()
 		set_732(jpath_table_m + jpath_table_index, dpnt->jextent);
 		jpath_table_index += 4;
 
-		if (dpnt->parent->jpath_index > 0xffff) {
+
+		if (dpnt->parent != reloc_dir) {
 #ifdef	USE_LIBSCHILY
-			comerrno(EX_BAD,
-			"Unable to generate sane path tables - too many directories (%d)\n",
+			set_721(jpath_table_l + jpath_table_index,
 				dpnt->parent->jpath_index);
 #else
 			fprintf(stderr,
@@ -734,18 +738,31 @@ generate_joliet_path_tables()
 				dpnt->parent->jpath_index);
 			exit(1);
 #endif
-		}
-
-		if (dpnt->parent != reloc_dir) {
-			set_721(jpath_table_l + jpath_table_index,
-				dpnt->parent->jpath_index);
 			set_722(jpath_table_m + jpath_table_index,
 				dpnt->parent->jpath_index);
+			jpindex = dpnt->parent->jpath_index;
 		} else {
 			set_721(jpath_table_l + jpath_table_index,
 				dpnt->self->parent_rec->filedir->jpath_index);
 			set_722(jpath_table_m + jpath_table_index,
 				dpnt->self->parent_rec->filedir->jpath_index);
+			jpindex = dpnt->self->parent_rec->filedir->jpath_index;
+		}
+
+		if (jpindex > 0xffff) {
+			static int warned = 0;
+
+			if (!warned) {
+				warned++;
+				errmsgno(EX_BAD,
+			"Unable to generate sane Joliet path tables - too many directories (%u)\n",
+					jpindex);
+			}
+			/*
+			 * Let it point to the root directory instead.
+			 */
+			set_721(jpath_table_l + jpath_table_index, 1);
+			set_722(jpath_table_m + jpath_table_index, 1);
 		}
 
 		jpath_table_index += 2;
@@ -1149,18 +1166,25 @@ joliet_compare_dirs(const void *rr, const void *ll)
 	/*
 	 * If the entries are the same, this is an error.
 	 * Joliet specs allow for a maximum of 64 characters.
+	 * If we see different multi extent parts, it is OK to
+	 * have the same name more than once.
 	 */
 	if (strncmp(rpnt, lpnt, jlen) == 0) {
-#ifdef	USE_LIBSCHILY
-		errmsgno(EX_BAD,
-			"Error: %s and %s have the same Joliet name\n",
-			(*r)->whole_name, (*l)->whole_name);
-#else
-		fprintf(stderr,
-			"Error: %s and %s have the same Joliet name\n",
-			(*r)->whole_name, (*l)->whole_name);
+#ifdef USE_LARGEFILES
+		if ((*r)->mxpart == (*l)->mxpart)
 #endif
-		jsort_goof++;
+		{
+#ifdef	USE_LIBSCHILY
+			errmsgno(EX_BAD,
+				"Error: %s and %s have the same Joliet name\n",
+				(*r)->whole_name, (*l)->whole_name);
+#else
+			fprintf(stderr,
+				"Error: %s and %s have the same Joliet name\n",
+				(*r)->whole_name, (*l)->whole_name);
+#endif
+			jsort_goof++;
+		}
 	}
 	/*
 	 * Put the '.' and '..' entries on the head of the sorted list.
@@ -1253,6 +1277,15 @@ joliet_compare_dirs(const void *rr, const void *ll)
 		return (1);
 	if (*lpnt)
 		return (-1);
+#ifdef USE_LARGEFILES
+	/*
+	 * (*r)->mxpart == (*l)->mxpart cannot happen here
+	 */
+	if ((*r)->mxpart < (*l)->mxpart)
+		return (-1);
+	else if ((*r)->mxpart > (*l)->mxpart)
+		return (1);
+#endif
 	return (0);
 }
 
@@ -1275,8 +1308,11 @@ joliet_sort_directory(struct directory_entry **sort_dir)
 
 	s_entry = *sort_dir;
 	while (s_entry) {
-		/* skip hidden entries */
-		if (!(s_entry->de_flags & INHIBIT_JOLIET_ENTRY))
+		/*
+		 * only colletc non-hidden entries
+		 */
+		if ((s_entry->de_flags & (INHIBIT_JOLIET_ENTRY|INHIBIT_UDF_ENTRY)) !=
+					(INHIBIT_JOLIET_ENTRY|INHIBIT_UDF_ENTRY))
 			dcount++;
 		s_entry = s_entry->next;
 	}
@@ -1288,8 +1324,11 @@ joliet_sort_directory(struct directory_entry **sort_dir)
 	dcount = 0;
 	s_entry = *sort_dir;
 	while (s_entry) {
-	/* skip hidden entries */
-		if (!(s_entry->de_flags & INHIBIT_JOLIET_ENTRY)) {
+		/*
+		 * only collect non-hidden entries
+		 */
+		if ((s_entry->de_flags & (INHIBIT_JOLIET_ENTRY|INHIBIT_UDF_ENTRY)) !=
+					(INHIBIT_JOLIET_ENTRY|INHIBIT_UDF_ENTRY)) {
 			sortlist[dcount] = s_entry;
 			dcount++;
 		}
