@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# show generic devices for CDROM SCSI devices
+#
+# needs a mounted /proc filesystem, printf, echo and grep
+#
+# when invoked with a number, the n-th cdrom SCSI address is
+# printed.
+#
+# example: 'scan_scsi.linux 2' will print the SCSI settings for
+#          the second cdrom device, namely '0,4,0' in my
+#          system.
+#
+# BUGS: limited to 9 devices
+#
+
+NUMBER=0
+LETTER=a
+while read ID; do
+	if [ ".${ID%%' '}" = ".Attached devices:" ]; then
+		continue;
+	fi
+	read ignore;
+	read ignore type ignore;
+	echo $ID '  ' $type ' -> ' /dev/sg$NUMBER
+	#echo $ID '  ' $type ' -> ' /dev/sg$NUMBER or /dev/sg$LETTER
+	NUMBER=$(($NUMBER + 1))
+#done <test_scanscsi | grep "WORM\|CD-ROM" |
+done </proc/scsi/scsi | grep "WORM\|CD-ROM" | \
+(DRIVES=1
+while read CD_DRIVE; do
+	if test $# -ne 0; then
+		if test $DRIVES -eq $1; then
+			CD_DRIVE=${CD_DRIVE#Host: scsi}
+			SCSIHOST=${CD_DRIVE%% *}
+			CHANNEL=${CD_DRIVE#*Channel: }
+			CHANNEL=${CHANNEL%% *}
+			SCSIID=${CD_DRIVE#*Id: }
+			SCSIID=${SCSIID%% *}
+			SCSILUN=${CD_DRIVE#*Lun: }
+			SCSILUN=${SCSILUN%% *}
+			#CD_DRIVE=${CD_DRIVE% or /dev/*}
+			echo ${CHANNEL},${SCSIID},${SCSILUN}
+			break;
+		fi
+	else
+			echo ${CD_DRIVE}
+	fi
+	DRIVES=$(($DRIVES + 1))
+done)
