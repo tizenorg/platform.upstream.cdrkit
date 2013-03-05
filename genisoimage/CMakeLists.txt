@@ -1,5 +1,5 @@
 PROJECT (MKISOFS C)
-
+FIND_PACKAGE(ZLIB REQUIRED)
 INCLUDE(../include/AddScgBits.cmake)
 INCLUDE(../include/AddSchilyBits.cmake)
 
@@ -45,7 +45,7 @@ ENDIF(NOT HAVE_GETOPT_LONG)
 LINK_DIRECTORIES(../libhfs_iso ../librols ../libusal ../libunls  ../wodim)
 
 ADD_EXECUTABLE (genisoimage genisoimage.c ${MKISOFS_MOST_SRCS})
-TARGET_LINK_LIBRARIES(genisoimage wodimstuff hfs_iso  ${MAGICLIBS} c unls z bz2 ${EXTRA_LIBICONV} ${EXTRA_LIBS})
+TARGET_LINK_LIBRARIES(genisoimage wodimstuff hfs_iso  ${MAGICLIBS} c unls ${ZLIB_LIBRARY} bz2 ${EXTRA_LIBICONV} ${EXTRA_LIBS})
 
 # common lib set and genisoimage source parts for the rest
 LINK_LIBRARIES(wodimstuff ${EXTRA_LIBS}  unls ${EXTRA_LIBICONV} )
