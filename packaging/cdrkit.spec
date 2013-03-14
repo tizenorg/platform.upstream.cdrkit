@@ -12,13 +12,12 @@ BuildRequires:  cmake
 BuildRequires:  fdupes
 BuildRequires:  file-devel
 BuildRequires:  gcc-c++
-BuildRequires:  bzip2-devel 
 BuildRequires:  libcap-devel
 BuildRequires:  perl
-BuildRequires:  zlib-devel
+BuildRequires:  pkgconfig(bzip2)
+BuildRequires:  pkgconfig(zlib)
 Provides:       wodim    = %{version}
 Provides:       cdrecord = %{version}
-Obsoletes:      cdrecord < %{version}
 
 %description
 wodim is used to record data or audio CDs on a CD-Recorder or to write
@@ -31,9 +30,6 @@ Group:          Development/Libraries
 Provides:       cdrecord-devel = %{version}
 Provides:       cdrtools-devel = %{version}
 Provides:       wodim-devel = %{version}
-Obsoletes:      cdrecord-devel < %{version}
-Obsoletes:      cdrtools-devel < %{version}
-Obsoletes:      wodim-devel < %{version}
 
 %description -n cdrkit-devel-static
 This package contains cdrkit libraries mandatory for development.
@@ -44,7 +40,6 @@ Summary:        A Program for Creating CDs in Linux
 Group:          Applications/Other
 Recommends:     zisofs-tools
 Provides:       mkisofs = %{version}
-Obsoletes:      mkisofs < %{version}
 
 %description -n genisoimage
 Genisoimage is a pre-mastering program that generates an iso9660
@@ -58,7 +53,6 @@ Summary:        A CD-Audio Grabbing tool
 Group:          Applications/Other
 Requires:       vorbis-tools
 Provides:       cdda2wav = %{version}
-Obsoletes:      cdda2wav < %{version}
 
 %description -n icedax
 The common CD-audio grabbing tool for Linux. The sources are now
@@ -79,8 +73,7 @@ mkisofs -> genisoimage
 cdda2wav -> icedax
 Install this package if you can't use the cdrkit programs directly.
 
-Requires:       genisoimage = %%{version-%%{release}
-Requires:       wodim = %%{version-%%{release}
+
 %prep
 %setup -q -n cdrkit-%{version}
 # Fix perl path
@@ -90,17 +83,17 @@ chmod 644 doc/icedax/tracknames.pl misc/burnstuff misc/rc.pp
 # Rename in order to not conflict with doc/genisoimage/README when added in genisoimage rpm doc files
 mv genisoimage/diag/README genisoimage/diag/README.diag
 
+
 %build
 export CFLAGS="%{optflags} -fno-strict-aliasing -DPIC -fPIC"
 export CXXFLAGS="$CFLAGS"
-
 mkdir build
 cd build
-
-cmake ../ -DCMAKE_INSTALL_PREFIX=%{_prefix}
+%cmake ../
 make VERBOSE=1 MANDIR=share/man %{?_smp_mflags}
 gcc %{optflags} %{S:2} -o cdinfo
 cd ..
+
 
 %install
 cd build
@@ -112,10 +105,11 @@ perl -pi -e 's#^require v5.8.1;##g' %{buildroot}%{_bindir}/dirsplit
 
 # Install additional programs
 install -pm 0755 build/cdinfo \
-	         icedax/cdda2mp3.new \
+                 icedax/cdda2mp3.new \
                  icedax/inf2cdtext.pl \
                  %{S:1} \
                  %{buildroot}%{_bindir}
+
 install -pm 0755 3rd-party/geteltorito/geteltorito.pl %{buildroot}%{_bindir}/geteltorito
 
 ln -sf wodim %{buildroot}%{_bindir}/cdrecord
@@ -153,10 +147,10 @@ cp -a libusal/*.h %{buildroot}%{_includedir}/usal/
 # I don't know why, a cmake expert should fix that. Work around it for now.
 cd build
 if test -e xconfig.h; then # old cmake 2.6
-	cp -a xconfig.h %{buildroot}%{_includedir}/cdrkit
+  cp -a xconfig.h %{buildroot}%{_includedir}/cdrkit
 elif ! test -e include/xconfig.h; then # new cmake 2.8
-	echo "error: xconfig.h not found!"
-	false
+  echo "error: xconfig.h not found!"
+  false
 fi
 cd ..
 
@@ -170,18 +164,6 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 
 %fdupes -s %{buildroot}
 
-%clean
-rm -rf %{buildroot}
-
-%verifyscript
-%verify_permissions -e %{_bindir}/wodim
-
-%post
-%if 0%{?set_permissions:1} > 0
-  %{set_permissions wodim}
-%else
-  %{run_permissions}
-%endif
 
 %files
 %defattr(-,root,root,-)
