@@ -1,3 +1,6 @@
+* Mon Mar 18 2013 Corentin Lecouvey <corentin.lecouvey@eurogiciel.fr> submit/trunk/20130314.171705@0164a54
+- remove cdrkit-devel-static package
+
 * Thu Mar 14 2013 Corentin Lecouvey <corentin.lecouvey@eurogiciel.fr> submit/devel/20130314.165935@cedbb96
 - Import initial packaging on 1.1.11
 
