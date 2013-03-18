@@ -23,19 +23,7 @@ Provides:       cdrecord = %{version}
 wodim is used to record data or audio CDs on a CD-Recorder or to write
 DVD media on a DVD-Recorder.
 
-%package -n cdrkit-devel-static
-License:        GPL-2.0
-Summary:        Tool for Writing CDRs - Files Mandatory for Development
-Group:          Development/Libraries
-Provides:       cdrecord-devel = %{version}
-Provides:       cdrtools-devel = %{version}
-Provides:       wodim-devel = %{version}
-
-%description -n cdrkit-devel-static
-This package contains cdrkit libraries mandatory for development.
-
 %package -n genisoimage
-License:        GPL-2.0
 Summary:        A Program for Creating CDs in Linux
 Group:          Applications/Other
 Recommends:     zisofs-tools
@@ -48,7 +36,6 @@ generates a binary image which corresponds to an iso9660 filesystem
 that can be written to a block device.
 
 %package -n icedax
-License:        GPL-2.0
 Summary:        A CD-Audio Grabbing tool
 Group:          Applications/Other
 Requires:       vorbis-tools
@@ -59,7 +46,6 @@ The common CD-audio grabbing tool for Linux. The sources are now
 contained in the wodim source archive.
 
 %package -n cdrkit-cdrtools-compat
-License:        GPL-2.0
 Summary:        Tool for Writing CDRs - cdrtools Compatibility Package
 Group:          Applications/Other
 Requires:       genisoimage = %{version}-%{release}
@@ -125,35 +111,6 @@ ln -sf icedax.1%{ext_man} %{buildroot}%{_mandir}/man1/cdda2wav.1%{ext_man}
 ln -sf genisoimage.1%{ext_man} %{buildroot}%{_mandir}/man1/mkisofs.1%{ext_man}
 ln -sf cdda2ogg.1%{ext_man} %{buildroot}%{_mandir}/man1/cdda2mp3.1%{ext_man}
 
-# Install libraries
-cd build
-install -dm 0755 %{buildroot}%{_libdir}
-install -pm 0644 libedc/libedc.a \
-                 libhfs_iso/libhfs_iso.a \
-                 libparanoia/libparanoia.a \
-                 librols/librols.a \
-                 libunls/libunls.a \
-                 libusal/libusal.a \
-                 %{buildroot}%{_libdir}
-cd ..
-
-# Install headers
-rm -rf %{buildroot}%{_includedir}
-mkdir -p %{buildroot}%{_includedir}/cdrkit
-cp -a include/*.h %{buildroot}%{_includedir}/cdrkit
-cp -a libusal/usal %{buildroot}%{_includedir}/
-cp -a libusal/*.h %{buildroot}%{_includedir}/usal/
-# it seems to depend on the cmake version if xconfig.h lands in ./ or in ./include/
-# I don't know why, a cmake expert should fix that. Work around it for now.
-cd build
-if test -e xconfig.h; then # old cmake 2.6
-  cp -a xconfig.h %{buildroot}%{_includedir}/cdrkit
-elif ! test -e include/xconfig.h; then # new cmake 2.8
-  echo "error: xconfig.h not found!"
-  false
-fi
-cd ..
-
 # Install config files
 install -dm 0755 %{buildroot}%{_sysconfdir}
 install -pm 0644 netscsid/netscsid.dfl %{buildroot}%{_sysconfdir}/netscsid.conf
@@ -190,12 +147,6 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 %doc %{_mandir}/man1/cdrecord.1%{ext_man}
 %doc %{_mandir}/man1/mkisofs.1%{ext_man}
 %doc %{_mandir}/man1/readcd.1%{ext_man}
-
-%files -n cdrkit-devel-static
-%defattr(-,root,root,-)
-%{_includedir}/cdrkit/
-%{_includedir}/usal/
-%{_libdir}/lib*.a
 
 %files -n genisoimage
 %defattr(-,root,root,-)
