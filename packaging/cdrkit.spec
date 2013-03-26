@@ -38,7 +38,7 @@ that can be written to a block device.
 %package -n icedax
 Summary:        A CD-Audio Grabbing tool
 Group:          Applications/Other
-Requires:       vorbis-tools
+Recommends:       vorbis-tools
 Provides:       cdda2wav = %{version}
 
 %description -n icedax
