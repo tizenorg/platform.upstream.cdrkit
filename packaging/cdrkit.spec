@@ -18,6 +18,7 @@ BuildRequires:  pkgconfig(bzip2)
 BuildRequires:  pkgconfig(zlib)
 Provides:       wodim    = %{version}
 Provides:       cdrecord = %{version}
+Requires:       cdrkit-cdrtools-compat
 
 %description
 wodim is used to record data or audio CDs on a CD-Recorder or to write
