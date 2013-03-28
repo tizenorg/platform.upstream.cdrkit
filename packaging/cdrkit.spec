@@ -4,7 +4,7 @@ Release:        0
 Summary:        Tool for Writing CDRs
 License:        GPL-2.0
 Url:            http://cdrkit.org/
-Group:          Applications/Other
+Group:          Multimedia/Media Service
 Source0:        http://cdrkit.org/releases/cdrkit-%{version}.tar.gz
 Source1:        scan_scsi.linux
 Source2:        cdinfo.c
@@ -26,7 +26,7 @@ DVD media on a DVD-Recorder.
 
 %package -n genisoimage
 Summary:        A Program for Creating CDs in Linux
-Group:          Applications/Other
+Group:          Multimedia/Media Service
 Recommends:     zisofs-tools
 Provides:       mkisofs = %{version}
 
@@ -38,8 +38,8 @@ that can be written to a block device.
 
 %package -n icedax
 Summary:        A CD-Audio Grabbing tool
-Group:          Applications/Other
-Recommends:       vorbis-tools
+Group:          Multimedia/Media Service
+Recommends:     vorbis-tools
 Provides:       cdda2wav = %{version}
 
 %description -n icedax
@@ -48,7 +48,7 @@ contained in the wodim source archive.
 
 %package -n cdrkit-cdrtools-compat
 Summary:        Tool for Writing CDRs - cdrtools Compatibility Package
-Group:          Applications/Other
+Group:          Multimedia/Media Service
 Requires:       genisoimage = %{version}-%{release}
 Requires:       icedax = %{version}-%{release}
 Requires:       wodim = %{version}-%{release}
