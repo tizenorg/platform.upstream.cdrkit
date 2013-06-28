@@ -8,6 +8,7 @@ Group:          Multimedia/Media Service
 Source0:        http://cdrkit.org/releases/cdrkit-%{version}.tar.gz
 Source1:        scan_scsi.linux
 Source2:        cdinfo.c
+Source1001: 	cdrkit.manifest
 BuildRequires:  cmake
 BuildRequires:  fdupes
 BuildRequires:  file-devel
@@ -63,6 +64,7 @@ Install this package if you can't use the cdrkit programs directly.
 
 %prep
 %setup -q -n cdrkit-%{version}
+cp %{SOURCE1001} .
 # Fix perl path
 find . -type f -print0 | xargs -0 perl -pi -e 's#/usr/local/bin/perl#/usr/bin/perl#g'
 # Fix permissions (no executables in doc files)
@@ -124,6 +126,7 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 
 
 %files
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %license COPYING
 %config(noreplace) %{_sysconfdir}/netscsid.conf
@@ -137,6 +140,7 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 %doc %{_mandir}/man1/wodim.1%{ext_man}
 
 %files -n cdrkit-cdrtools-compat
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_bindir}/cdda2wav
 %{_bindir}/cdrecord
@@ -150,6 +154,7 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 %doc %{_mandir}/man1/readcd.1%{ext_man}
 
 %files -n genisoimage
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_bindir}/devdump
 %{_bindir}/dirsplit
@@ -169,6 +174,7 @@ ln -sf wodim.1%{ext_man} %{buildroot}%{_mandir}/man1/netscsid.1%{ext_man}
 %doc %{_mandir}/man5/genisoimagerc.5%{ext_man}
 
 %files -n icedax
+%manifest %{name}.manifest
 %defattr(-,root,root,-)
 %{_bindir}/cdda2mp3
 %{_bindir}/cdda2mp3.new
